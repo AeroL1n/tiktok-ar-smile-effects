@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.DS_Store
+.env
+.env.*
+.claude/
+
+# Test-only camera recordings and local model downloads
+/test/
+/public/models/*.task
