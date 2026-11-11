@@ -12,7 +12,8 @@ const dir = resolve(dirname(fileURLToPath(import.meta.url)), '../test/recordings
 const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.json')).sort() : [];
 
 // 期望：张嘴大笑至少放一次烟花；其余都不能放烟花（轻轻笑出声目前判成下雨，是已知局限）。
-const EXPECT_FIREWORK = { 'big-laugh': true, 'teeth-smile': false, 'light-laugh': false, 'laugh-talk': false, cry: false };
+// 门槛为了现场好触发而下调后的已知取舍：边笑边说话可能放烟花（不同录制结果不一致，不作硬性断言），哭脸仍然不放。
+const EXPECT_FIREWORK = { 'big-laugh': true, 'teeth-smile': false, 'light-laugh': false, cry: false };
 
 function replay(recording) {
   const machine = createExpressionMachine(RULES);

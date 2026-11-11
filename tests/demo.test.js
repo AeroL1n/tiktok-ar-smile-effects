@@ -33,15 +33,15 @@ test('碰撞体：头顶和肩上的点能命中，头旁边的空白处不命�
   assert.equal(hitShape(300, 50, shapes), null);
 });
 
-test('光雨：雨滴落到肩膀上也会停下，不会穿过肩膀落到画面底部', () => {
+test('光雨：雨滴到肩膀附近就消失，不会落到画面底部', () => {
   const rain = createBlessingRain(RULES.rain);
-  const head = { cx: 320, cy: 120, rx: 60, ry: 75, vx: 0, vy: 0 };
-  const env = { emission: 1, glow: 1, residual: 1, ended: false };
-  const region = { left: 0, width: 640 };
+  const head = { cx: 320, cy: 300, rx: 60, ry: 75, vx: 0, vy: 0 };
+  const env = { phase: 'raining', emission: 1, glow: 1, rainbow: 1, residual: 1, started: false, ended: false };
+  const view = { left: 0, width: 640, top: 0, height: 900 };
   const shoulders = bodyShapes(head)[1];
-  for (let i = 0; i < 200; i += 1) rain.update(0.016, { envelope: env, head, region, height: 900 });
+  for (let i = 0; i < 200; i += 1) rain.update(0.016, { envelope: env, head, view });
   assert.ok(rain.dropCount > 0);
-  assert.equal(rain.dropsBelow(shoulders.cx - shoulders.rx * 0.5, shoulders.cx + shoulders.rx * 0.5, shoulders.cy), 0);
+  assert.equal(rain.dropsBelow(0, 640, shoulders.cy), 0);
 });
 
 test('演示输入：默认自动演示，可切换成固定状态', () => {
@@ -86,4 +86,19 @@ test('指针坐标换算：考虑铺满裁切和镜像', () => {
   assert.ok(Math.abs(left.x - 540) < 1e-9, '镜像后屏幕左边对应画布右边');
   const plain = viewToCanvas(0, 0, view, canvas, false);
   assert.ok(Math.abs(plain.x) < 1e-9);
+});
+
+import { DEMO_PHOTO, photoFaceBox, photoLayout } from '../src/rules/demo.js';
+import { headEllipse } from '../src/rules/effects.js';
+
+test('演示照片：铺满画布，人脸框换算到画布后仍在画面里，头顶留出下雨的空间', () => {
+  for (const [w, h] of [[540, 675], [540, 960], [540, 540]]) {
+    const L = photoLayout(DEMO_PHOTO, w, h);
+    assert.ok(L.w >= w - 1e-6 && L.h >= h - 1e-6, '铺满');
+    assert.ok(L.x <= 1e-6 && L.y <= 1e-6, '不留空边');
+    const box = photoFaceBox(DEMO_PHOTO, w, h);
+    assert.ok(box.minX > 0 && box.maxX < 1 && box.minY > 0 && box.maxY < 1, `${w}×${h} 人脸在画面里`);
+    const head = headEllipse(box, w, h);
+    assert.ok(head.cy - head.ry > h * 0.05, `${w}×${h} 头顶上方有空间`);
+  }
 });

@@ -7,4 +7,3 @@ dist/
 
 # Test-only camera recordings and local model downloads
 /test/
-/public/models/*.task

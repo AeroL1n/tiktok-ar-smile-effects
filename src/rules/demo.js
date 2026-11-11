@@ -71,3 +71,42 @@ export function createDemoInput({ width, height }) {
     get sway() { return sway; }
   };
 }
+
+// 演示用的两张照片（941×1672），同一张脸、同一个角度：微笑那张用来演示下雨，大笑那张用来演示烟花。
+// 人脸框是用 MediaPipe Face Landmarker 对照片识别一次得到的（2026-11-11，归一化到照片宽高），
+// 照片不会变，所以直接存结果，演示时不用再加载识别模型，评审打开演示马上就能看到效果。
+const MODEL = { width: 941, height: 1672, focusY: 0.38 };
+export const DEMO_PHOTOS = Object.freeze({
+  smile: Object.freeze({
+    ...MODEL,
+    src: 'demo/model-smile.jpg',
+    face: Object.freeze({ minX: 0.3033, maxX: 0.699, minY: 0.3776, maxY: 0.6467 })
+  }),
+  laugh: Object.freeze({
+    ...MODEL,
+    src: 'demo/model-laugh.jpg',
+    face: Object.freeze({ minX: 0.305, maxX: 0.6991, minY: 0.3792, maxY: 0.6501 })
+  })
+});
+// 兼容旧的单个照片常量（测试和别处按这个名字引用）。
+export const DEMO_PHOTO = DEMO_PHOTOS.smile;
+
+// 照片按“铺满画布、可能裁掉上下或左右”放进画布时的位置和缩放（画布像素）。
+export function photoLayout(photo, canvasWidth, canvasHeight) {
+  const scale = Math.max(canvasWidth / photo.width, canvasHeight / photo.height);
+  const w = photo.width * scale;
+  const h = photo.height * scale;
+  return { x: (canvasWidth - w) / 2, y: (canvasHeight - h) * photo.focusY, w, h };
+}
+
+// 照片里的人脸框换成画布上的归一化人脸框，格式和摄像头模式的 getFaceBox 一样，可以直接交给 headEllipse。
+export function photoFaceBox(photo, canvasWidth, canvasHeight) {
+  const L = photoLayout(photo, canvasWidth, canvasHeight);
+  const minX = (L.x + photo.face.minX * L.w) / canvasWidth;
+  const maxX = (L.x + photo.face.maxX * L.w) / canvasWidth;
+  const minY = (L.y + photo.face.minY * L.h) / canvasHeight;
+  const maxY = (L.y + photo.face.maxY * L.h) / canvasHeight;
+  const width = maxX - minX;
+  const height = maxY - minY;
+  return { minX, maxX, minY, maxY, width, height, area: width * height, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 };
+}

@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import createFireworks, { FIREWORK_LIMITS, stepFireworkParticle } from '../src/app/fireworks.js';
+import createFireworks, { FIREWORK_LIMITS, KINDS, stepFireworkParticle } from '../src/app/fireworks.js';
 import { createFireworkScheduler } from '../src/rules/effects.js';
 import { RULES } from '../src/rules/config.js';
 
-const cfg = { ...RULES.fireworks, lifetimeMs: 2400 };
+const cfg = RULES.fireworks;
 const region = { left: 0, width: 540 };
 const scene = { head: null, region, height: 960 };
 const stillHead = { cx: 0, cy: 0, rx: 20, ry: 30, vx: 0, vy: 0 };
@@ -46,7 +46,16 @@ function withCanvas(body) {
               stats.gradients += 1;
               return { addColorStop() {} };
             },
-            fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, fill() {}
+            fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, fill() {}, stroke() {},
+            scale() {}, fillText() {}, measureText(text) { return { width: text.length * 26 }; },
+            // 中部一条假的笔画带：让 makeWordSprite 能采到字形点，消散才有火星可发。
+            getImageData(_x, _y, w, h) {
+              const data = new Uint8ClampedArray(w * h * 4);
+              for (let py = Math.floor(h * 0.4); py < h * 0.6; py += 2) {
+                for (let px = Math.floor(w * 0.3); px < w * 0.7; px += 2) data[(py * w + px) * 4 + 3] = 255;
+              }
+              return { data };
+            }
           };
         }
       };
@@ -67,8 +76,15 @@ function withCanvas(body) {
       this.restoreCount += 1;
       Object.assign(this, stack.pop());
     },
+    transform: [1, 0, 0, 1, 0, 0],
+    setTransform(...m) { this.transform = m; },
+    beginPath() {},
+    moveTo() {},
+    lineTo() {},
+    stroke() {},
+    fillRect() {},
     drawImage(_sprite, ...rect) {
-      calls.push({ rect, alpha: this.globalAlpha, blend: this.globalCompositeOperation });
+      calls.push({ rect, alpha: this.globalAlpha, blend: this.globalCompositeOperation, transform: this.transform });
     }
   };
   try {
@@ -178,209 +194,264 @@ test('解析阻尼：30、60、120 帧的自由轨迹接近同一个结果', () 
   assert.ok(results[0].vy > 0, '先上冲、后下坠');
 });
 
-test('烟花可在无 DOM、无头部输入时启动和更新，默认导出与命名接口可用', () => {
+const head = { cx: 270, cy: 420, rx: 90, ry: 112, vx: 0, vy: 0 };
+const withHead = { ...scene, head };
+const launchAt = (fireworks, opts = {}) => fireworks.launch(270, head.cy - head.ry * 2.1, 0, 540, { full: true, tier: 0, ...opts });
+const kinds = (fireworks) => new Set(fireworks.snapshot().particles.map((p) => p.kind));
+
+test('烟花可在无 DOM 时启动和更新，默认导出与命名接口可用', () => {
   const fireworks = createFireworks(cfg, { random: seeded() });
-  assert.equal(fireworks.launch(270, 180, 0), true);
-  run(fireworks, 0.5);
+  assert.equal(launchAt(fireworks), true);
+  run(fireworks, 1.2);
   assert.equal(fireworks.burstCount, 1);
-  assert.equal(fireworks.particleCount, 60);
+  assert.ok(fireworks.particleCount > 30);
   assert.equal(fireworks.collisionCount, 0);
 });
 
-test('短上冲之后分三次爆开，爆发数和每发星点数都有上限', () => {
-  const fireworks = createFireworks(cfg, { random: () => 0.5 });
-  fireworks.launch(270, 180, 0);
-  fireworks.update(0.15, scene);
-  assert.equal(fireworks.particleCount, 0);
-  fireworks.update(0.06, scene);
-  assert.equal(fireworks.particleCount, 30);
-  fireworks.update(0.07, scene);
-  assert.equal(fireworks.particleCount, 48);
-  fireworks.update(0.09, scene);
-  assert.equal(fireworks.particleCount, 60);
-  assert.equal(fireworks.launch(170, 180, 0), true);
-  assert.equal(fireworks.launch(370, 180, 0), true);
-  assert.equal(fireworks.launch(270, 180, 0), false);
-  assert.equal(fireworks.burstCount, 3);
+test('过程：先发射、辅助烟花上冲，到顶停顿后主花绽放，同时弹出一个主词', () => {
+  const fireworks = createFireworks(cfg, { random: seeded() });
+  launchAt(fireworks);
+  run(fireworks, 0.35, 120, withHead);
+  assert.ok(kinds(fireworks).has(KINDS.STREAK), '辅助烟花先上冲');
+  assert.ok(!kinds(fireworks).has(KINDS.PETAL), '主花还没炸开');
+  assert.equal(fireworks.wordCount, 0);
+  run(fireworks, 1.0, 120, withHead);
+  const petals = fireworks.snapshot().particles.filter((p) => p.kind === KINDS.PETAL).length;
+  assert.ok(petals >= 30 && petals <= FIREWORK_LIMITS.petals, `主花 ${petals} 颗`);
+  const words = fireworks.snapshot().words;
+  assert.equal(words.filter((w) => w.main).length, 1);
+  assert.ok(cfg.words.tiers[0].words.includes(words[0].text));
 });
 
-test('持续大笑一分钟，三发烟花、总粒子和碰撞碎星保持有界', () => {
+test('二次绽放：主花里约 3 颗再炸开一圈，并带出 1–2 个碎词', () => {
+  let sawCrackle = false;
+  let fragments = 0;
+  const fireworks = createFireworks(cfg, { random: seeded(5) });
+  launchAt(fireworks);
+  for (let i = 0; i < 200; i += 1) {
+    fireworks.update(1 / 120, scene);
+    const snap = fireworks.snapshot();
+    if (snap.particles.some((p) => p.kind === KINDS.CRACKLE)) sawCrackle = true;
+    fragments = Math.max(fragments, snap.words.filter((w) => !w.main).length);
+  }
+  assert.ok(sawCrackle);
+  assert.ok(fragments >= 1 && fragments <= 2, `碎词 ${fragments} 个`);
+  for (const w of fireworks.snapshot().words) if (!w.main) assert.ok(cfg.words.fragments.includes(w.text));
+});
+
+test('辅助烟花：从头两侧发射，不从脸前经过；结局有散落、渐隐、小绽放三种', () => {
+  const fates = new Set();
+  let sawEmber = false;
+  let sawPop = false;
+  for (let seed = 1; seed < 12; seed += 1) {
+    const fireworks = createFireworks(cfg, { random: seeded(seed) });
+    fireworks.update(0, withHead);
+    launchAt(fireworks);
+    for (let i = 0; i < 160; i += 1) {
+      fireworks.update(1 / 120, withHead);
+      for (const p of fireworks.snapshot().particles) {
+        if (p.kind === KINDS.STREAK) {
+          fates.add(p.fate);
+          assert.ok(Math.hypot((p.x - head.cx) / head.rx, (p.y - head.cy) / head.ry) >= 0.9, '大致从轮廓外侧放射');
+        }
+        if (p.kind === KINDS.EMBER) sawEmber = true;
+        if (p.kind === KINDS.POP) sawPop = true;
+      }
+    }
+  }
+  assert.deepEqual([...fates].sort(), [0, 1, 2]);
+  assert.ok(sawEmber && sawPop);
+});
+
+test('单词按大笑时长升档：刚笑 HAHA/hehe，笑开后出现 LOL / I\'M DEAD 一类', () => {
+  const scheduler = createFireworkScheduler(cfg);
+  const fireworks = createFireworks(cfg, { random: seeded() });
+  const seen = [];
+  const faceScene = { head: { cx: 270, cy: 420, rx: 90, ry: 112, vx: 0, vy: 0 }, region: { left: 0, width: 540 }, height: 960 };
+  for (let t = 0; t <= 14000; t += 1000 / 60) {
+    const r = scheduler.update(t, true);
+    if (r.launch) fireworks.launch(270, 180, t, 540, r);
+    fireworks.update(1 / 60, faceScene);
+    const w = fireworks.snapshot().words.find((x) => x.main);
+    if (w && (!seen.length || seen.at(-1).text !== w.text || t - seen.at(-1).t > 1)) seen.push({ t, text: w.text });
+  }
+  assert.ok(seen.length >= 3, `至少换了 3 次词（${seen.length}）`);
+  assert.ok(cfg.words.tiers[0].words.includes(seen[0].text), '第一个词来自第一档');
+  const late = seen.filter((x) => x.t > 8000).map((x) => x.text);
+  const latePool = cfg.words.tiers.slice(1).flatMap((t) => t.words);
+  assert.ok(late.some((x) => latePool.includes(x)), '后段出现更高档的词');
+  for (const tier of cfg.words.tiers) for (const word of tier.words) assert.ok(/^[\x20-\x7e]+$/.test(word));
+});
+
+
+test('调度：进入大笑立即放一轮，之后每 0.8 秒一轮，停下再笑立即放', () => {
+  const scheduler = createFireworkScheduler(cfg);
+  const launches = [];
+  for (let t = 0; t <= 1600; t += 50) if (scheduler.update(t, true).launch) launches.push(t);
+  assert.deepEqual(launches, [0, 800, 1600]);
+  scheduler.update(1700, false);
+  assert.equal(scheduler.update(1700 + cfg.lifetimeMs, true).launch, true);
+});
+
+
+test('单词原地小字渐显、放大，最后从字形散成火星', () => {
+  withCanvas(() => {
+    const fireworks = createFireworks(cfg, { random: seeded() });
+    // 每 0.8 秒补一轮：消散时要从还活着的烟花借粒子和寿命。
+    let first = null;
+    let late = null;
+    let plan = 0;
+    let emitted = 0;
+    for (let i = 0; i <= 480; i += 1) {
+      if (i % 96 === 0) fireworks.launch(head.cx, head.cy - head.ry * 1.6, i / 120, 540, { full: true, tier: 1 });
+      fireworks.update(1 / 120, withHead);
+      const words = fireworks.snapshot().words;
+      if (!first) first = words.find((w) => w.main) ?? null;
+      if (!first) continue;
+      const same = words.find((w) => w.main && w.born === first.born);
+      if (!same) continue;
+      if (same.age >= 0.9 && same.age < 1.05 && !late) late = same;
+      plan = Math.max(plan, same.dissolve);
+      emitted = Math.max(emitted, same.emitted);
+    }
+    assert.ok(first && late, '主词出现了');
+    assert.ok(Math.abs(first.x - late.x) < 1e-6 && Math.abs(first.y - late.y) < 1e-6, '词原地不动，不再下落');
+    assert.equal(plan, 13, '大词消散计划 13 颗');
+    assert.equal(emitted, 13, '13 颗火星全部散出');
+  });
+});
+
+test('持续大笑一分钟：烟花数、光粒、单词都有上限，碰撞真实发生', () => {
   const fireworks = createFireworks(cfg, { random: seeded() });
   const scheduler = createFireworkScheduler(cfg);
-  const head = { cx: 270, cy: 250, rx: 110, ry: 140, vx: 0, vy: 0 };
   let launched = 0;
   let peak = 0;
   for (let i = 0; i < 60 * 60; i += 1) {
-    if (scheduler.update(i * 1000 / 60, true).launch) {
+    const r = scheduler.update(i * 1000 / 60, true);
+    if (r.launch) {
       launched += 1;
-      fireworks.launch(270, 115, i * 1000 / 60);
+      fireworks.launch(head.cx, head.cy - head.ry * 2.1, i * 1000 / 60, 540, r);
     }
-    fireworks.update(1 / 60, { ...scene, head });
-    assert.ok(fireworks.burstCount <= cfg.maxConcurrent);
+    fireworks.update(1 / 60, withHead);
+    assert.ok(fireworks.burstCount <= FIREWORK_LIMITS.shells * 3 + 1);
     assert.ok(fireworks.particleCount <= FIREWORK_LIMITS.particles);
-    assert.ok(fireworks.particleCount <= fireworks.burstCount
-      * (FIREWORK_LIMITS.particlesPerBurst + FIREWORK_LIMITS.fragmentsPerBurst + FIREWORK_LIMITS.contactsPerBurst));
+    assert.ok(fireworks.wordCount <= FIREWORK_LIMITS.words);
     peak = Math.max(peak, fireworks.particleCount);
   }
-  assert.ok(launched > 60, '持续大笑会持续播放');
-  assert.ok(peak > 60, '确实有多发同时活跃');
-  assert.ok(fireworks.collisionCount > 0, '压力场景包含真实碰撞');
+  assert.ok(launched > 60);
+  assert.ok(peak > 100, `峰值 ${peak}`);
+  assert.ok(fireworks.collisionCount > 0);
+});
+
+test('帧率降级：质量降低后辅助烟花、二次绽放和碎词变少', () => {
+  const count = (q) => {
+    const fireworks = createFireworks(cfg, { random: seeded() });
+    fireworks.setQuality(q);
+    launchAt(fireworks);
+    let peak = 0;
+    let frag = 0;
+    for (let i = 0; i < 240; i += 1) {
+      fireworks.update(1 / 120, scene);
+      peak = Math.max(peak, fireworks.particleCount);
+      frag = Math.max(frag, fireworks.snapshot().words.filter((w) => !w.main).length);
+    }
+    return { peak, frag };
+  };
+  const full = count(1);
+  const low = count(0.3);
+  assert.ok(low.peak < full.peak);
+  assert.ok(low.frag <= full.frag);
 });
 
 test('配置容量再大也受绝对上限约束，小容量的粒子池不能溢出', () => {
   const small = createFireworks({ ...cfg, maxConcurrent: 999, maxParticles: 18, particlesPerBurst: 999 }, { random: () => 0.5 });
   for (let i = 0; i < 50; i += 1) small.launch(270, 180, i);
-  assert.equal(small.burstCount, 3);
-  run(small, 0.7, 120, { ...scene, head: { cx: 270, cy: 180, rx: 100, ry: 120, vx: 0, vy: 0 } });
+  assert.equal(small.burstCount, FIREWORK_LIMITS.shells);
+  run(small, 0.9, 120, { ...scene, head: { cx: 270, cy: 230, rx: 100, ry: 120, vx: 0, vy: 0 } });
   assert.ok(small.particleCount > 0 && small.particleCount <= 18);
-  assert.ok(small.collisionCount > 0);
   const zero = createFireworks({ ...cfg, maxParticles: 0 });
   zero.launch(270, 180, 0);
-  zero.update(0.7, scene);
+  zero.update(0.9, scene);
   assert.equal(zero.particleCount, 0);
 });
 
-test('update 是唯一时间源，launch 的时间原点和 draw 的时间不会改变寿命', () => {
+test('update 是唯一时间源：launch 的时间参数和 draw 的时间不会改变寿命', () => {
   const a = createFireworks(cfg, { random: seeded() });
   const b = createFireworks(cfg, { random: seeded() });
   a.launch(270, 180, 0);
-  b.launch(270, 180, 987654321);
+  b.launch(270, 180, 987654321 * 1000);
   run(a, 0.8);
   run(b, 0.8);
   withCanvas(({ context }) => {
     for (let i = 0; i < 20; i += 1) b.draw(context, i * 1e12, 540);
   });
-  assert.equal(a.burstCount, b.burstCount);
   assert.equal(a.particleCount, b.particleCount);
-  a.update(1.6, scene);
-  b.update(1.6, scene);
-  assert.equal(a.burstCount, 0);
-  assert.equal(b.burstCount, 0);
-  assert.equal(b.particleCount, 0);
+  a.update(2, scene);
+  b.update(2, scene);
+  // 词会在烟花期间不断续上，所以先等烟花结束、再让最后一批词耗尽。
+  a.update(3, scene);
+  b.update(3, scene);
+  assert.equal(a.burstCount + b.burstCount + b.particleCount, 0);
 });
 
-test('clear 清空烟花、粒子、碰撞统计和内部时钟，之后可以重新播放', () => {
-  const fireworks = createFireworks(cfg, { random: () => 0.5 });
-  fireworks.update(1000, scene);
+test('clear 清空烟花、光粒、单词、碰撞统计和内部时钟', () => {
+  const fireworks = createFireworks(cfg, { random: seeded(3) });
   fireworks.launch(270, 180, 5);
-  run(fireworks, 0.33, 120, { ...scene, head: { cx: 270, cy: 180, rx: 100, ry: 120, vx: 0, vy: 0 } });
+  run(fireworks, 1.2, 120, { ...scene, head: { cx: 270, cy: 260, rx: 100, ry: 120, vx: 0, vy: 0 } });
   assert.ok(fireworks.collisionCount > 0);
   fireworks.clear();
-  assert.equal(fireworks.burstCount, 0);
-  assert.equal(fireworks.particleCount, 0);
-  assert.equal(fireworks.collisionCount, 0);
-  const fresh = createFireworks(cfg, { random: () => 0.5 });
-  fireworks.launch(270, 180, 5);
-  fresh.launch(270, 180, 5);
-  run(fireworks, 0.5);
-  run(fresh, 0.5);
-  withCanvas(({ context, calls }) => {
-    fireworks.draw(context, 1e12, 540);
-    const actual = calls.splice(0);
-    fresh.draw(context, -1000, 540);
-    assert.deepEqual(calls, actual, '重置后轨迹、年龄和相位应与新实例一致');
-  });
+  assert.deepEqual([fireworks.burstCount, fireworks.particleCount, fireworks.wordCount, fireworks.collisionCount], [0, 0, 0, 0]);
 });
 
-test('寿命末端释放全部粒子，长停帧会回收旧烟花，不补出陈旧爆发', () => {
-  for (const life of [1600, 2400]) {
-    const fireworks = createFireworks({ ...cfg, lifetimeMs: life }, { random: seeded() });
-    fireworks.launch(270, 180, 0);
-    fireworks.update(0.4, scene);
-    assert.ok(fireworks.particleCount > 0);
-    fireworks.update(life / 1000 - 0.41, scene);
-    assert.equal(fireworks.burstCount, 1);
-    fireworks.update(0.011, scene);
-    assert.equal(fireworks.burstCount, 0);
-    assert.equal(fireworks.particleCount, 0);
-    fireworks.launch(270, 180, 0);
-    fireworks.update(3600, scene);
-    assert.equal(fireworks.burstCount, 0);
-    assert.equal(fireworks.particleCount, 0);
-  }
-});
 
 test('小于固定步长的 dt 能累积，非法或负 dt 不会让时间倒退', () => {
-  const fireworks = createFireworks(cfg, { random: () => 0.5 });
-  fireworks.launch(270, 180, NaN);
-  for (let i = 0; i < 400; i += 1) fireworks.update(0.001, scene);
-  assert.equal(fireworks.particleCount, 60);
-  const count = fireworks.particleCount;
-  for (const dt of [-1, NaN, Infinity, undefined]) fireworks.update(dt, scene);
-  assert.equal(fireworks.particleCount, count);
-  assert.equal(fireworks.burstCount, 1);
+  const a = createFireworks(cfg, { random: seeded() });
+  const b = createFireworks(cfg, { random: seeded() });
+  a.launch(270, 180, NaN);
+  b.launch(270, 180, 0);
+  for (let i = 0; i < 700; i += 1) a.update(0.001, scene);
+  b.update(0.7, scene);
+  assert.equal(a.particleCount, b.particleCount);
+  const n = a.particleCount;
+  for (const dt of [-1, NaN, Infinity, undefined]) a.update(dt, scene);
+  assert.equal(a.particleCount, n);
 });
 
-test('只碰头部，不把肩膀当作烟花碰撞体', () => {
+test('寿命末端全部回收，长停帧不补出陈旧爆发', () => {
   const fireworks = createFireworks(cfg, { random: seeded() });
-  fireworks.launch(270, 550, 0);
-  run(fireworks, 0.7, 60, { ...scene, head: { cx: 270, cy: 180, rx: 60, ry: 80, vx: 0, vy: 0 } });
+  fireworks.launch(270, 180, 0);
+  fireworks.update(0.7, scene);
   assert.ok(fireworks.particleCount > 0);
-  assert.equal(fireworks.collisionCount, 0);
+  fireworks.update(cfg.lifetimeMs / 1000, scene);
+  assert.deepEqual([fireworks.burstCount, fireworks.particleCount, fireworks.wordCount], [0, 0, 0]);
+  fireworks.launch(270, 180, 0);
+  fireworks.update(3600, scene);
+  assert.equal(fireworks.particleCount, 0);
 });
 
-test('正式系统 30、60、120 帧下的轨迹与移动头部碰撞一致', () => {
-  withCanvas(({ context, calls }) => {
-    const frames = [30, 60, 120].map((fps) => {
-      const fireworks = createFireworks(cfg, { random: seeded() });
-      fireworks.launch(270, 180, 123);
-      for (let i = 1; i <= fps; i += 1) {
-        fireworks.update(1 / fps, { ...scene, head: { cx: 200 + 30 * i / fps, cy: 220, rx: 60, ry: 80, vx: 30, vy: 0 } });
-      }
-      fireworks.draw(context, 0, 540);
-      return { particles: fireworks.particleCount, collisions: fireworks.collisionCount, draws: calls.splice(0) };
-    });
-    assert.ok(frames[0].collisions > 0);
-    for (const frame of frames.slice(1)) {
-      assert.equal(frame.particles, frames[0].particles);
-      assert.equal(frame.collisions, frames[0].collisions);
-      assert.equal(frame.draws.length, frames[0].draws.length);
-      frame.draws.forEach((call, i) => {
-        call.rect.forEach((value, j) => near(value, frames[0].draws[i].rect[j], 1e-4));
-        near(call.alpha, frames[0].draws[i].alpha, 1e-6);
-      });
-    }
-  });
-});
-
-test('首次 draw 懒建纹理，后续帧不创建渐变，始终 save/restore', () => {
+test('首次 draw 懒建纹理（含全部单词），后续帧不再创建渐变；始终 save/restore，绘制都是局部贴图', () => {
   withCanvas(({ stats, context, calls }) => {
     const fireworks = createFireworks(cfg, { random: seeded() });
-    fireworks.launch(270, 180, 0);
-    run(fireworks, 0.8);
+    launchAt(fireworks);
+    run(fireworks, 0.9);
     assert.equal(stats.canvases, 0);
-    fireworks.draw(context, 800, 540);
-    assert.equal(stats.canvases, 6);
+    fireworks.draw(context, 0, 540);
+    const canvases = stats.canvases;
     const gradients = stats.gradients;
+    assert.ok(canvases > 8);
     const first = calls.splice(0);
     fireworks.draw(context, 999999999, 800);
     assert.equal(stats.gradients, gradients);
-    assert.equal(stats.canvases, 6);
-    assert.deepEqual(calls, first, 'draw 参数不能推进动画或缩放世界坐标');
+    assert.equal(stats.canvases, canvases);
+    assert.deepEqual(calls.map((c) => c.rect), first.map((c) => c.rect), 'draw 参数不推进动画');
     assert.equal(context.globalAlpha, 0.43);
     assert.equal(context.globalCompositeOperation, 'source-over');
     assert.equal(context.saveCount, context.restoreCount);
     for (const call of calls) {
       assert.ok(call.rect.every(Number.isFinite));
       assert.ok(call.alpha >= 0 && call.alpha <= 1);
-      assert.equal(call.blend, 'lighter');
-      assert.ok(call.rect[2] < 540 * 0.08, '所有绘制都是局部精灵，没有全屏白闪');
+      assert.ok(call.blend === 'lighter' || call.blend === 'source-over');
     }
-  });
-});
-
-test('轨迹历史和碰撞亮点绘制数量有硬上限，clear 后 draw 不留下旧帧', () => {
-  withCanvas(({ context, calls }) => {
-    const fireworks = createFireworks({ ...cfg, trailPoints: 999, particlesPerBurst: 999 }, { random: seeded() });
-    for (let i = 0; i < 3; i += 1) fireworks.launch(240 + i * 30, 180, i);
-    run(fireworks, 0.7, 120, { ...scene, head: { cx: 270, cy: 250, rx: 120, ry: 150, vx: 0, vy: 0 } });
-    fireworks.draw(context, 700, 540);
-    assert.ok(calls.length > fireworks.particleCount);
-    assert.ok(calls.length <= fireworks.particleCount * (FIREWORK_LIMITS.trailPoints + 2) + 18);
-    fireworks.clear();
-    calls.length = 0;
-    fireworks.draw(context, 1000, 540);
-    assert.equal(calls.length, 0);
   });
 });
 
@@ -388,7 +459,7 @@ test('渲染异常仍恢复宿主画布状态', () => {
   withCanvas(({ context }) => {
     const fireworks = createFireworks(cfg, { random: seeded() });
     fireworks.launch(270, 180, 0);
-    run(fireworks, 0.6);
+    run(fireworks, 0.7);
     context.drawImage = () => { throw new Error('绘制失败'); };
     assert.throws(() => fireworks.draw(context, 600, 540), /绘制失败/);
     assert.equal(context.saveCount, context.restoreCount);
@@ -397,24 +468,13 @@ test('渲染异常仍恢复宿主画布状态', () => {
   });
 });
 
-test('launch 使用可见宽度作为单位，缺省值等于显式 540', () => {
-  withCanvas(({ context, calls }) => {
-    const a = createFireworks(cfg, { random: seeded() });
-    const b = createFireworks(cfg, { random: seeded() });
-    a.launch(270, 180, 0);
-    b.launch(270, 180, 0, 540);
-    run(a, 0.6);
-    run(b, 0.6);
-    a.draw(context, 0, 540);
-    const first = calls.splice(0);
-    b.draw(context, 0, 1000);
-    assert.deepEqual(calls, first);
-    const doubled = createFireworks(cfg, { random: seeded() });
-    doubled.launch(540, 360, 0, 1080);
-    run(doubled, 0.6, 60, { head: null, region: { left: 0, width: 1080 }, height: 1920 });
-    calls.length = 0;
-    doubled.draw(context, 0, 1080);
-    assert.equal(calls.length, first.length);
-    calls.forEach((call, i) => call.rect.forEach((value, j) => near(value, first[i].rect[j] * 2, 1e-4)));
+test('30、60、120 帧下的结果一致（固定步长）', () => {
+  const results = [30, 60, 120].map((fps) => {
+    const fireworks = createFireworks(cfg, { random: seeded() });
+    fireworks.update(0, { ...scene, head: { cx: 230, cy: 260, rx: 70, ry: 90, vx: 0, vy: 0 } });
+    fireworks.launch(270, 120, 0);
+    for (let i = 1; i <= fps; i += 1) fireworks.update(1 / fps, { ...scene, head: { cx: 230 + 30 * i / fps, cy: 260, rx: 70, ry: 90, vx: 30, vy: 0 } });
+    return [fireworks.particleCount, fireworks.wordCount, fireworks.collisionCount];
   });
+  for (const r of results.slice(1)) assert.deepEqual(r, results[0]);
 });

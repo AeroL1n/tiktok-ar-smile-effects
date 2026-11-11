@@ -102,7 +102,12 @@ export function createExpressionMachine(cfg) {
 
   function isLaugh(s) {
     const l = cfg.laugh;
-    return s.smile >= l.smileMin && s.squint >= l.squintMin && s.browDown < l.browDownMax && mouthOpenForLaugh(s);
+    if (s.browDown >= l.browDownMax) return false;
+    // 主入口：录制数据校准出来的条件。
+    if (s.smile >= l.smileMin && s.squint >= l.squintMin && mouthOpenForLaugh(s)) return true;
+    // 备用入口：嘴角很高（≥0.85）、下巴明显张开（≥0.2）、嘴略张（≥0.12）、眯眼略低（≥0.44）。
+    // 这类是“咧开嘴笑”，嘴唇间距不大但下巴动得明显；边笑边说话下巴几乎不动，哭脸嘴角不够高，都会被这条排除。
+    return s.smile >= l.wideSmile && s.jaw >= l.wideJaw && s.lipGap >= l.wideLipGap && s.squint >= l.wideSquint;
   }
 
   function explain(s) {

@@ -66,6 +66,13 @@ test('基线有上限：校准时一直在笑，也不会把微笑判定吃掉',
   assert.equal(done.baseline.smile, RULES.calibration.maxSmileBaseline);
 });
 
+test('真机读数：原始嘴角 0.68、扣掉基线 0.30 后 0.38，应该下雨（2026-11-11 实测）', () => {
+  const h = harness();
+  h.calibrate();
+  h.feed(600, { smile: 0.68, jaw: 0.05 });
+  assert.equal(h.last.state, 'smile');
+});
+
 test('微笑保持后下雨', () => {
   const h = harness();
   h.calibrate();
@@ -195,13 +202,7 @@ test('哭脸：嘴角高、眯眼、上排牙露出，但皱着眉，不放烟�
   assert.match(h.last.reason, /皱/);
 });
 
-test('嘴角不到 0.68：嘴张开、眯眼也只下雨', () => {
-  const h = harness();
-  h.calibrate();
-  h.feed(1500, { smile: 0.63, jaw: 0.29, lipGap: 0.36, squint: 0.65, upperUp: 0.6, browDown: 0.09 });
-  assert.equal(h.last.state, 'smile');
-  assert.match(h.last.reason, /嘴角/);
-});
+
 
 // 用户 2026-11-08 截图里的读数（转头 ≤ 20°），阈值就是根据它们定的。
 // 这是回归测试，防止以后改规则把它们改坏；不能当作阈值的验收依据。早期截图没有上唇上提，按 0 处理。
@@ -217,10 +218,11 @@ const MEASURED = [
   ['大笑（第三轮图三，嘴张得小）', { smile: 0.82, lipGap: 0.26, squint: 0.69, upperUp: 0.78, browDown: 0.01 }, 'laugh'],
   ['大笑（第三轮图六）', { smile: 0.88, lipGap: 0.31, squint: 0.62, upperUp: 0.75, browDown: 0.01 }, 'laugh'],
   ['大笑（第三轮图七）', { smile: 0.8, lipGap: 0.24, squint: 0.7, upperUp: 0.74, browDown: 0.18 }, 'laugh'],
-  ['大笑 E（已知局限：嘴角 0.61，判成下雨）', { smile: 0.61, lipGap: 0.32, squint: 0.77 }, 'smile'],
+  ['用力大笑（2026-11-11 照片，皱眉 0.276）', { smile: 0.95, lipGap: 0.31, squint: 0.78, upperUp: 0.75, browDown: 0.28 }, 'laugh'],
+  ['大笑 E（门槛下调后嘴角 0.61 也能放烟花）', { smile: 0.61, lipGap: 0.32, squint: 0.77 }, 'laugh'],
   ['哭脸 A（下雨）', { smile: 0.61, lipGap: 0.21, squint: 0.8, browDown: 0.09 }, 'smile'],
   ['哭脸 B（下雨）', { smile: 0.53, lipGap: 0.28, squint: 0.8, browDown: 0.24 }, 'smile'],
-  ['大哭（第三轮图四，下雨）', { smile: 0.63, lipGap: 0.36, squint: 0.65, upperUp: 0.6, browDown: 0.09 }, 'smile']
+  ['大哭（第三轮图四，门槛下调后会放烟花，已知局限）', { smile: 0.63, lipGap: 0.36, squint: 0.65, upperUp: 0.6, browDown: 0.09 }, 'laugh']
 ];
 
 for (const [name, face, expected] of MEASURED) {
@@ -232,14 +234,14 @@ for (const [name, face, expected] of MEASURED) {
   });
 }
 
-test('退出迟滞：嘴角回落到 0.35–0.50 之间仍下雨，低于 0.35 才停', () => {
+test('退出迟滞：嘴角回落到 0.25–0.36 之间仍下雨，低于 0.25 才停', () => {
   const h = harness();
   h.calibrate();
   h.feed(600, SMILE);
   assert.equal(h.last.state, 'smile');
-  h.feed(1000, { smile: 0.45, jaw: 0.05 });
+  h.feed(1000, { smile: 0.32, jaw: 0.05 });
   assert.equal(h.last.state, 'smile');
-  h.feed(1000, { smile: 0.2, jaw: 0.05 });
+  h.feed(1000, { smile: 0.15, jaw: 0.05 });
   assert.equal(h.last.state, 'idle');
 });
 

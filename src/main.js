@@ -3,11 +3,11 @@ import { RULES } from './rules/config.js';
 import { createFaceTracker, getFaceBox, needsRecalibration, yawFromMatrix } from './rules/faceSelection.js';
 import { assessQuality, averageLuma, getVisibleRegion } from './rules/quality.js';
 import { createExpressionMachine } from './rules/expression.js';
-import { bodyShapes, createFireworkScheduler, createHeadFollower, createRainEnvelope, headEllipse } from './rules/effects.js';
-import { createDemoInput, viewToCanvas } from './rules/demo.js';
+import { bodyShapes, createFireworkScheduler, createHeadFollower, createRainEnvelope, headEllipse, planVolley } from './rules/effects.js';
+import { DEMO_PHOTOS, createDemoInput, photoFaceBox, photoLayout, viewToCanvas } from './rules/demo.js';
 import { extractSignals, pitchFromMatrix } from './rules/signals.js';
 import { createRecorder } from './app/recorder.js';
-import { createPlaceholderFireworks } from './app/placeholderEffects.js';
+import { createFireworks } from './app/fireworks.js';
 import { createBlessingRain } from './app/blessingRain.js';
 import * as ui from './app/ui.js';
 import './styles.css';
@@ -23,7 +23,7 @@ const assetUrl = (path) => `${import.meta.env.BASE_URL}${path}`;
 const tracker = createFaceTracker(RULES.faceSelection);
 const machine = createExpressionMachine(RULES);
 const scheduler = createFireworkScheduler(RULES.fireworks);
-const fireworks = createPlaceholderFireworks(RULES);
+const fireworks = createFireworks(RULES.fireworks);
 const rain = createBlessingRain(RULES.rain);
 const rainEnvelope = createRainEnvelope(RULES.rain);
 const headFollower = createHeadFollower(RULES.head);
@@ -48,7 +48,22 @@ let cameraSession = 0;
 let demoInput = null;
 let demoClock = 0;
 let demoState = null;
-const demoSettings = { mode: 'auto', sway: true, scale: 1, slow: false, paused: false, bounds: false };
+// 演示默认用模特照片持续播放微笑效果；假人保留，可拖动、可放大缩小。
+const demoSettings = { subject: 'photo', mode: 'auto', sway: true, scale: 1, slow: false, paused: false, bounds: false };
+// 两张照片：微笑那张配下雨，大笑那张配烟花。表情按钮切换时换图。
+const demoImages = {
+  smile: new Image(),
+  laugh: new Image()
+};
+for (const [key, img] of Object.entries(demoImages)) {
+  img.decoding = 'async';
+}
+function activePhoto() {
+  return demoSettings.mode === 'laugh' ? DEMO_PHOTOS.laugh : DEMO_PHOTOS.smile;
+}
+function loadDemoPhoto() {
+  for (const [key, img] of Object.entries(demoImages)) if (!img.src) img.src = assetUrl(DEMO_PHOTOS[key].src);
+}
 const DEMO_WIDTH = 540;
 const counters = { detections: 0, frames: 0, since: 0, detectionRate: 0, renderFps: 0 };
 const metrics = { raw: null, candidates: null, faceCount: 0, quality: '—', yaw: NaN, pitch: NaN, blendshapes: [] };
@@ -87,6 +102,8 @@ function detect(now) {
   if (needsRecalibration(pick.kind)) {
     machine.reset();
     scheduler.reset();
+    // 换了一个人：雨和彩虹在旧的人头上原地收尾，不滑到新的人头上。
+    rain.detach();
   }
 
   let face = null;
@@ -130,9 +147,12 @@ function detect(now) {
 
   const firework = scheduler.update(now, view.state === 'laugh');
   if (firework.launch && selectedBox) {
+    const head = headEllipse(selectedBox, overlay.width, overlay.height);
     const w = overlay.width;
     const h = overlay.height;
-    fireworks.launch(selectedBox.cx * w, Math.max(h * 0.12, (selectedBox.minY - 0.12) * h), now);
+    const visible = getVisibleRegion(w, h, viewSize.width, viewSize.height);
+    const region = { left: visible.x0 * w, width: (visible.x1 - visible.x0) * w, top: visible.y0 * h, height: (visible.y1 - visible.y0) * h };
+    launchVolley(head, region, now, firework);
   }
 
   lastView = view;
@@ -140,6 +160,14 @@ function detect(now) {
   ui.renderSignals({ ...metrics, signals: view.signals });
   recordFrame(now, view);
   counters.detections += 1;
+}
+
+// 这一版：每一轮在脸周围的不同方向放一组 1 大 + 2 中 + 1 小，下一轮避开用过的方向。
+let lastSectors = [];
+function launchVolley(head, region, now, firework) {
+  const plan = planVolley(head, region, { full: true, avoid: lastSectors, unit: region.width }, RULES.fireworks.volley);
+  lastSectors = plan.sectors;
+  fireworks.launchVolley(plan, now, region.width, firework);
 }
 
 const STATE_CODE = { idle: 0, smile: 1, laugh: 2 };
@@ -186,7 +214,8 @@ async function saveRecording(result) {
   }
 }
 
-function drawFaceGuide() {
+// 调试框：蓝色虚线是人脸框；橙色虚线是雨和烟花用的头部、肩膀碰撞范围，用来和真人画面对照校准。
+function drawFaceGuide(head) {
   if (!selectedBox) return;
   const w = overlay.width;
   const h = overlay.height;
@@ -197,23 +226,38 @@ function drawFaceGuide() {
   ctx.beginPath();
   ctx.ellipse(selectedBox.cx * w, selectedBox.cy * h, (selectedBox.width / 2) * w, (selectedBox.height / 2) * h, 0, 0, Math.PI * 2);
   ctx.stroke();
+  if (head) {
+    ctx.strokeStyle = 'rgba(255, 199, 138, 0.75)';
+    ctx.setLineDash([4, 8]);
+    for (const shape of bodyShapes(head)) {
+      ctx.beginPath();
+      ctx.ellipse(shape.cx, shape.cy, shape.rx, shape.ry, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
   ctx.restore();
 }
 
 function renderEffects(w, h, head, effectNow) {
   if (inputMode === 'demo') drawDemoScene(w, h, head);
-  else if (debugGuide) drawFaceGuide();
-  rain.draw(ctx, { head, unit: lastRegion.width });
-  fireworks.draw(ctx, effectNow, w);
+  else if (debugGuide) drawFaceGuide(head);
+  rain.draw(ctx, { head });
+  fireworks.draw(ctx, effectNow, w, w, h);
 }
 
-let lastRegion = { left: 0, width: 640 };
-
+// region：画布上实际可见的区域（摄像头画面铺满裁切后，左右或上下会有一截看不到）。
 function stepEffects({ dt, effectNow, state, target, w, h, region }) {
-  lastRegion = region;
   const head = headFollower.update(target, dt * 1000);
   const envelope = rainEnvelope.update(effectNow, state);
-  rain.update(dt, { envelope, head, region, height: h });
+  rain.update(dt, { envelope, head, view: region });
+  fireworks.update(dt, { head, region, height: h });
+  // 追光遮罩：亮背景多压暗，暗背景少压（演示照片按亮背景处理）。
+  const bright = inputMode === 'demo' ? 180 : brightness;
+  // 背景压暗加强：最暗 85%，亮度 50 以下也有 30% 的基础压暗，180 的演示照片直接到顶。
+  fireworks.setDarken(bright === null ? 0.5 : Math.min(0.85, 0.3 + Math.max(0, (bright - 50) / 130) * 0.55));
+  // 脸占可见宽度的比例越大，烟花的舒适区越小：摄像头里脸常常比演示照片大一倍。
+  const tight = region.width > 0 && head ? Math.min(1, (head.rx * 2) / region.width) : 0.5;
+  fireworks.setReach(2.2 - 0.7 * Math.max(0, (tight - 0.6) / 0.4));
   ctx.clearRect(0, 0, w, h);
   renderEffects(w, h, head, effectNow);
 }
@@ -223,6 +267,9 @@ function countFrame(now) {
   if (now - counters.since < 1000) return;
   counters.detectionRate = counters.detections;
   counters.renderFps = counters.frames;
+  // 按帧率降级：低于 45 帧先减少辅助烟花和碎词，再减少二次绽放；回到 55 帧以上慢慢恢复。
+  if (counters.renderFps < 45) fireworks.setQuality(fireworks.quality - 0.2);
+  else if (counters.renderFps >= 55) fireworks.setQuality(fireworks.quality + 0.1);
   counters.detections = 0;
   counters.frames = 0;
   counters.since = now;
@@ -232,8 +279,9 @@ function countFrame(now) {
     detectionRate: counters.detectionRate,
     renderFps: counters.renderFps,
     drops: rain.dropCount,
-    sparkles: rain.sparkleCount,
-    bursts: fireworks.burstCount
+    sparkles: rain.splashCount,
+    bursts: fireworks.burstCount,
+    fireworkParticles: fireworks.particleCount
   });
 }
 
@@ -263,14 +311,14 @@ function cameraFrame(now) {
     target: selectedBox ? headEllipse(selectedBox, w, h) : null,
     w,
     h,
-    region: { left: visible.x0 * w, width: (visible.x1 - visible.x0) * w }
+    region: { left: visible.x0 * w, width: (visible.x1 - visible.x0) * w, top: visible.y0 * h, height: (visible.y1 - visible.y0) * h }
   });
   countFrame(now);
 }
 
 // 演示模式：画布按画面框的宽高比铺满，不裁切；表情和头部位置来自按钮和拖动。
 function setupDemoCanvas() {
-  const ratio = viewSize.width && viewSize.height ? viewSize.height / viewSize.width : 1.25;
+  const ratio = viewSize.width && viewSize.height ? viewSize.height / viewSize.width : 16 / 9;
   const w = DEMO_WIDTH;
   const h = Math.round(DEMO_WIDTH * ratio);
   if (overlay.width !== w || overlay.height !== h || !demoInput) {
@@ -292,20 +340,27 @@ function demoFrame(now) {
   demoClock += dt * 1000;
   const w = overlay.width;
   const h = overlay.height;
-  const { state, target } = demoInput.update(demoClock);
+  const input = demoInput.update(demoClock);
+  const state = input.state;
+  // 照片模式：头部位置来自对照片识别一次得到的人脸框，和摄像头模式走同一个 headEllipse。
+  // 照片在画布里是镜像画的，人脸框也要左右镜像。
+  const target = demoSettings.subject === 'photo' ? headEllipse(mirrorBox(photoFaceBox(activePhoto(), w, h)), w, h) : input.target;
   if (state !== demoState) {
     demoState = state;
     ui.renderDemoStage(state);
   }
   const head = headFollower.update(target, 0);
-  if (scheduler.update(demoClock, state === 'laugh').launch && head) {
-    fireworks.launch(head.cx, Math.max(h * 0.12, head.cy - head.ry * 1.6), demoClock);
-  }
-  stepEffects({ dt, effectNow: demoClock, state, target, w, h, region: { left: 0, width: w } });
+  const firework = scheduler.update(demoClock, state === 'laugh');
+  if (firework.launch && head) launchVolley(head, { left: 0, width: w, top: 0, height: h }, demoClock, firework);
+  stepEffects({ dt, effectNow: demoClock, state, target, w, h, region: { left: 0, width: w, top: 0, height: h } });
   countFrame(now);
 }
 
 function drawDemoScene(w, h, head) {
+  if (demoSettings.subject === 'photo') {
+    drawDemoPhoto(w, h, head);
+    return;
+  }
   const bg = ctx.createLinearGradient(0, 0, 0, h);
   bg.addColorStop(0, '#68789a');
   bg.addColorStop(0.55, '#454f69');
@@ -338,6 +393,35 @@ function drawDemoScene(w, h, head) {
     }
   }
   ctx.restore();
+}
+
+const mirrorBox = (box) => ({ ...box, minX: 1 - box.maxX, maxX: 1 - box.minX, cx: 1 - box.cx });
+
+// 照片铺满画布。画布在页面上是镜像显示的，照片先镜像一次，屏幕上就是原图的方向。
+function drawDemoPhoto(w, h, head) {
+  ctx.fillStyle = '#c9c9c7';
+  ctx.fillRect(0, 0, w, h);
+  const photo = activePhoto();
+  const img = demoImages[demoSettings.mode === 'laugh' ? 'laugh' : 'smile'];
+  if (!img.complete) return;
+  const L = photoLayout(photo, w, h);
+  ctx.save();
+  ctx.translate(w, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(img, L.x, L.y, L.w, L.h);
+  ctx.restore();
+  if (demoSettings.bounds && head) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 199, 138, 0.9)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 6]);
+    for (const shape of bodyShapes(head)) {
+      ctx.beginPath();
+      ctx.ellipse(shape.cx, shape.cy, shape.rx, shape.ry, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 }
 
 function frame(now) {
@@ -399,7 +483,8 @@ async function start() {
     stop({ silent: true });
     const opened = await navigator.mediaDevices.getUserMedia({
       audio: false,
-      video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
+      // 4:3 保留最多竖向视野；分辨率能高就高，竖屏裁切后仍清楚。摄像头不支持时会自动退到接近的值。
+      video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 960 } }
     });
     if (switched()) {
       opened.getTracks().forEach((track) => track.stop());
@@ -456,6 +541,7 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('pagehide', () => stop({ silent: true }));
 
 ui.bindDebugToggle((open) => { debugGuide = open; });
+ui.bindPanelClose();
 
 function setInputMode(mode) {
   if (mode === inputMode) return;
@@ -477,6 +563,8 @@ function setInputMode(mode) {
     ui.setMode('demo', '演示模式 · 模拟表情');
     ui.setRecorderEnabled(false);
     demoState = null;
+    loadDemoPhoto();
+    ui.setDemoSubjectView(demoSettings.subject);
     setupDemoCanvas();
     rafId = requestAnimationFrame(frame);
   } else {
@@ -490,6 +578,14 @@ function setInputMode(mode) {
 }
 
 ui.bindInputMode(setInputMode);
+ui.bindDemoSubject((subject) => {
+  demoSettings.subject = subject;
+  headFollower.reset();
+  rain.clear();
+  rainEnvelope.reset();
+  fireworks.clear();
+  scheduler.reset();
+});
 ui.bindDemoControls({
   onState: (mode) => { demoSettings.mode = mode; demoInput?.setMode(mode); },
   onSway: (on) => { demoSettings.sway = on; demoInput?.setSway(on, demoClock); },
@@ -505,7 +601,7 @@ function pointerToCanvas(event) {
 }
 
 ui.els.frame.addEventListener('pointerdown', (event) => {
-  if (inputMode !== 'demo' || !demoInput) return;
+  if (inputMode !== 'demo' || !demoInput || demoSettings.subject === 'photo') return;
   ui.els.frame.setPointerCapture(event.pointerId);
   const p = pointerToCanvas(event);
   demoInput.dragTo(p.x, p.y);

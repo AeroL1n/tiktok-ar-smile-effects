@@ -20,6 +20,9 @@ export const els = {
   error: $('errorMessage'),
   debugToggle: $('debugToggle'),
   debugBody: $('debugBody'),
+  panel: $('debugPanel'),
+  panelClose: $('panelClose'),
+  recorderSection: $('recorderSection'),
   thresholds: $('thresholdNote')
 };
 
@@ -33,7 +36,7 @@ const STATE_LABELS = {
 const LIVE_LABELS = { idle: '未连接', loading: '启动中', live: '识别中', paused: '已暂停', error: '需处理', demo: '演示中' };
 
 const fmt = (v, digits = 2) => (Number.isFinite(v) ? v.toFixed(digits) : '—');
-const setText = (id, text) => { $(id).textContent = text; };
+const setText = (id, text) => { const el = $(id); if (el) el.textContent = text; };
 
 export function setMode(mode, statusText) {
   els.status.textContent = statusText;
@@ -73,7 +76,7 @@ export function renderStage(view) {
   els.state.textContent = STATE_LABELS[key];
   els.state.dataset.expression = key;
   els.dot.dataset.expression = key;
-  els.reason.textContent = view.reason || (key === 'idle' ? '微笑或大笑来触发效果' : '');
+  els.reason.textContent = view.reason || (!view.quiet && key === 'idle' ? '微笑或大笑来触发效果' : '');
 
   els.hint.textContent = view.hint;
   els.hint.hidden = !view.hint;
@@ -118,17 +121,30 @@ export function renderMetrics(m) {
   setText('brightnessValue', Number.isFinite(m.brightness) ? fmt(m.brightness, 0) : '—');
   setText('detectionRateValue', `${m.detectionRate} 次/秒`);
   setText('renderFpsValue', `${m.renderFps} 帧/秒`);
-  setText('particleValue', `${m.drops} / ${m.sparkles} / ${m.fireworkParticles}`);
-  setText('collisionValue', String(m.collisions));
+  setText('particleValue', `${m.drops} / ${m.sparkles} / ${m.fireworkParticles ?? m.bursts ?? 0}`);
+  if (m.collisions !== undefined) setText('collisionValue', String(m.collisions));
+}
+
+function setPanelOpen(open) {
+  els.panel.classList.toggle('is-open', open);
+  document.body.classList.toggle('panel-open', open);
+  els.debugToggle.setAttribute('aria-expanded', String(open));
+  if (els.panelClose) els.panelClose.hidden = !open;
 }
 
 export function bindDebugToggle(onChange = () => {}) {
   els.debugToggle.addEventListener('click', () => {
     const open = els.debugToggle.getAttribute('aria-expanded') !== 'true';
-    els.debugToggle.setAttribute('aria-expanded', String(open));
-    els.debugToggle.textContent = open ? '收起识别与性能数据' : '识别与性能数据';
-    els.debugBody.hidden = !open;
+    setPanelOpen(open);
     onChange(open);
+  });
+}
+
+export function bindPanelClose() {
+  if (!els.panelClose) return;
+  els.panelClose.addEventListener('click', () => setPanelOpen(false));
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') setPanelOpen(false);
   });
 }
 
@@ -175,8 +191,9 @@ const RECORD_HINT = '点“录 3 秒”后有 3 秒准备时间，再连续记�
 export function setRecorderEnabled(enabled) {
   rec.button.disabled = !enabled;
   rec.label.disabled = !enabled;
-  rec.status.textContent = enabled ? RECORD_HINT : '演示模式下不能录制，请切回摄像头模式。';
+  rec.status.textContent = RECORD_HINT;
   rec.copy.hidden = true;
+  if (els.recorderSection) els.recorderSection.hidden = !enabled;
 }
 
 const modeButtons = [...document.querySelectorAll('[data-input]')];
@@ -184,6 +201,8 @@ const demoEls = {
   controls: $('demoControls'),
   fallback: $('demoFallback'),
   states: [...document.querySelectorAll('[data-demo-state]')],
+  subjects: [...document.querySelectorAll('[data-demo-subject]')],
+  tip: $('demoTip'),
   sway: $('demoSway'),
   bounds: $('demoBounds'),
   scale: $('demoScale'),
@@ -222,16 +241,36 @@ export function bindDemoControls({ onState, onSway, onBounds, onScale, onSlow, o
     demoEls.states.forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
     onState(b.dataset.demoState);
   }));
-  demoEls.sway.addEventListener('change', () => onSway(demoEls.sway.checked));
-  demoEls.bounds.addEventListener('change', () => onBounds(demoEls.bounds.checked));
-  demoEls.scale.addEventListener('input', () => onScale(Number(demoEls.scale.value)));
-  toggle(demoEls.slow, onSlow);
-  toggle(demoEls.pause, onPause);
-  demoEls.backdrop.addEventListener('change', () => onBackdrop(demoEls.backdrop.value));
+  demoEls.sway?.addEventListener('change', () => onSway(demoEls.sway.checked));
+  demoEls.bounds?.addEventListener('change', () => onBounds(demoEls.bounds.checked));
+  demoEls.scale?.addEventListener('input', () => onScale(Number(demoEls.scale.value)));
+  if (demoEls.slow) toggle(demoEls.slow, onSlow);
+  if (demoEls.pause) toggle(demoEls.pause, onPause);
+  demoEls.backdrop?.addEventListener('change', () => onBackdrop?.(demoEls.backdrop.value));
+}
+
+const DEMO_TIPS = {
+  photo: '照片里的人脸位置是用识别模型对这张照片识别一次得到的，雨和彩虹按她真实的头发和肩膀发生。表情由按钮模拟。',
+  figure: '拖动画面里的人形可以模拟晃头。'
+};
+
+// 演示人物：模特照片（固定位置，持续播放）或假人（可拖动、可轻晃）。
+export function bindDemoSubject(onChange) {
+  demoEls.subjects.forEach((b) => b.addEventListener('click', () => {
+    demoEls.subjects.forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    setDemoSubjectView(b.dataset.demoSubject);
+    onChange(b.dataset.demoSubject);
+  }));
+}
+
+export function setDemoSubjectView(subject) {
+  demoEls.controls.dataset.subject = subject;
+  els.frame.dataset.subject = subject;
+  if (demoEls.tip) demoEls.tip.textContent = DEMO_TIPS[subject] ?? '';
 }
 
 export function renderDemoStage(state) {
-  renderStage({ phase: 'running', state, reason: '演示模式：表情由按钮模拟，不是识别结果', hint: '', calibrationProgress: 0 });
+  renderStage({ phase: 'running', state, reason: '', hint: '', quiet: true, calibrationProgress: 0 });
 }
 
 export function clearSignals(quality) {
