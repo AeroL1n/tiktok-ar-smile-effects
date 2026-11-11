@@ -23,7 +23,10 @@
 
 [hidden] { display: none !important; }
 
-html, body { min-height: 100%; }
+html, body {
+  min-height: 100%;
+  width: 100%;
+}
 
 body {
   margin: 0;
@@ -35,7 +38,7 @@ button { font: inherit; }
 h1, h2, p { margin-top: 0; }
 
 .app {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   padding: 26px clamp(20px, 4vw, 56px) 36px;
@@ -97,6 +100,7 @@ h1, h2, p { margin-top: 0; }
 
 .stage {
   position: relative;
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -548,19 +552,100 @@ h1, h2, p { margin-top: 0; }
 }
 
 @media (max-width: 760px) {
-  .app { padding: 18px 16px 28px; }
+  .app {
+    min-height: 100svh;
+    padding:
+      max(14px, env(safe-area-inset-top))
+      max(14px, env(safe-area-inset-right))
+      max(24px, env(safe-area-inset-bottom))
+      max(14px, env(safe-area-inset-left));
+  }
+  .topbar { gap: 12px; }
   .wordmark { font-size: 18px; }
   .mode-switch button { padding: 6px 12px; }
-  .stage-area { padding-top: 16px; }
-  .camera-frame { width: 100%; height: auto; max-height: 70vh; border-radius: 24px; }
-  .stage-caption { flex-wrap: wrap; row-gap: 4px; }
+  .stage-area {
+    min-height: 0;
+    align-items: start;
+    padding: clamp(12px, 3vh, 24px) 0 4px;
+  }
+  .stage {
+    width: 100%;
+    gap: 12px;
+  }
+  .camera-frame {
+    width: min(100%, 430px);
+    height: auto;
+    max-height: none;
+    border-radius: 18px;
+  }
+  .stage-caption {
+    width: min(100%, 430px);
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
   .expression-state { font-size: 13px; }
-  .demo-controls { flex-wrap: wrap; justify-content: center; border-radius: 20px; }
+  .expression-reason {
+    flex-basis: 100%;
+    text-align: center;
+  }
+  .demo-controls {
+    width: min(100%, 430px);
+    flex-wrap: wrap;
+    justify-content: center;
+    border-radius: 20px;
+  }
+  .demo-row { justify-content: center; }
+  .stage-footer {
+    width: min(100%, 430px);
+    flex-direction: column;
+    gap: 8px;
+  }
+  .error-message {
+    width: 100%;
+    text-align: center;
+  }
+  .footer-actions {
+    width: 100%;
+  }
+  .footer-actions > button {
+    flex: 1;
+    min-height: 44px;
+  }
   .settings-popover { width: min(280px, calc(100vw - 40px)); }
+  .debug-panel {
+    width: 100%;
+    padding:
+      max(18px, env(safe-area-inset-top))
+      max(18px, env(safe-area-inset-right))
+      max(28px, env(safe-area-inset-bottom))
+      max(18px, env(safe-area-inset-left));
+  }
+  .panel-head { top: calc(-1 * max(18px, env(safe-area-inset-top))); }
+  .drawer-tab { right: max(0px, env(safe-area-inset-right)); }
 }
 
 @media (max-width: 420px) {
   .demo-states .chip { padding: 8px 10px; font-size: 12px; }
+  .topbar-actions { gap: 6px; }
+  .mode-switch button { padding-inline: 9px; }
+  .demo-states { width: 100%; }
+  .demo-states .chip {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 900px) and (orientation: landscape) {
+  .app {
+    min-height: 100svh;
+    padding-block: max(10px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-bottom));
+  }
+  .stage-area { padding-block: 10px 0; }
+  .camera-frame {
+    width: auto;
+    height: min(calc(100svh - 132px), 560px);
+    max-width: min(70vw, 430px);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
