@@ -113,7 +113,7 @@ h1, h2, p { margin-top: 0; }
   position: relative;
   z-index: 1;
   aspect-ratio: 9 / 16;
-  height: min(76vh, 820px);
+  height: min(76vh, calc(100vh - 220px), 820px);
   max-width: 100%;
   overflow: hidden;
   border: 1px solid var(--line);
