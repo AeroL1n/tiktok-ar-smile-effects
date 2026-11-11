@@ -564,8 +564,8 @@ h1, h2, p { margin-top: 0; }
   .wordmark { font-size: 18px; }
   .mode-switch button { padding: 6px 12px; }
   .stage-area {
+    display: block;
     min-height: 0;
-    align-items: start;
     padding: clamp(12px, 3vh, 24px) 0 4px;
   }
   .stage {
@@ -573,9 +573,11 @@ h1, h2, p { margin-top: 0; }
     gap: 12px;
   }
   .camera-frame {
-    width: min(100%, 430px);
+    width: min(90vw, 430px);
     height: auto;
+    aspect-ratio: 9 / 16;
     max-height: none;
+    margin-inline: auto;
     border-radius: 18px;
   }
   .stage-caption {
