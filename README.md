@@ -2,18 +2,16 @@
 
 直播 AR 表情特效 Demo：主播微笑时头顶下一场带彩虹的轻雨，大笑时放一束香槟礼花，雨滴和火花会和头部、肩膀碰撞。人脸识别在本机浏览器里完成，视频不上传。
 
+**在线演示：** https://aerol1n.github.io/tiktok-ar-smile-effects/
+
 ## 本地运行
 
 ```bash
 npm install
-npm run prepare:vision
-```
-
-把 `face_landmarker.task` 放进 `public/models/`，然后运行：
-
-```bash
 npm run dev
 ```
+
+人脸模型和 MediaPipe wasm 已随仓库提供（`public/models/`、`public/wasm/`），不需要额外下载。
 
 浏览器访问 Vite 地址后，点击“开启摄像头”。摄像头需要 HTTPS 或 `localhost`，视频不会上传服务器。
 
@@ -32,6 +30,18 @@ npm run dev
 
 ## 演示模式
 
-页面右上角切到“演示”，不需要摄像头：默认用一张模特照片持续播放微笑效果，也可以切换成可拖动的假人。表情由按钮模拟，不是识别结果。
+页面右上角切到“演示”，不需要摄像头：默认自动循环播放微笑与大笑效果，也可以用底部三个按钮固定到某个状态。表情由按钮模拟，不是识别结果。
 
-演示照片 `public/demo/portrait.jpg` 是 **AI 生成的人像**，不是真人照片，仅用于效果演示。照片里的人脸位置是用 Face Landmarker 对这张图识别一次后写入 `src/rules/demo.js` 的。
+演示照片 `public/demo/model-smile.jpg`、`model-laugh.jpg` 是 **AI 生成的人像**，不是真人照片，仅用于效果演示。照片里的人脸位置是用 Face Landmarker 对这张图识别一次后写入 `src/rules/demo.js` 的。
+
+
+## 部署
+
+GitHub Pages 发布 `dist/`：
+
+```bash
+npm run build
+# 将 dist/ 推送到 gh-pages 分支
+```
+
+线上地址：https://aerol1n.github.io/tiktok-ar-smile-effects/ （HTTPS，摄像头可用）。
