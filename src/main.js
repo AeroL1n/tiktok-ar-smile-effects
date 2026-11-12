@@ -446,7 +446,7 @@ async function loadModel() {
     ui.setMode('loading', '正在加载识别模型…');
     const vision = await FilesetResolver.forVisionTasks(assetUrl('wasm'));
     const options = (delegate) => ({
-      baseOptions: { modelAssetPath: assetUrl('models/face_landmarker.task'), delegate },
+      baseOptions: { modelAssetPath: `${assetUrl('models/face_landmarker.task')}?v=20261112`, delegate },
       runningMode: 'VIDEO',
       numFaces: 3,
       outputFaceBlendshapes: true,
@@ -467,7 +467,8 @@ async function loadModel() {
     }
     if (!faceLandmarker) throw lastError ?? new Error('识别模型加载失败');
   })().catch((error) => {
-    const detail = String(error?.message ?? '').slice(0, 80);
+    const detail = String(error?.message || error || '').slice(0, 120);
+    console.error('识别模型加载失败', error);
     throw new Error(detail ? `识别模型加载失败：${detail}` : '识别模型加载失败，请检查网络后重试。', { cause: error });
   }).finally(() => {
     modelLoading = null;
