@@ -5,16 +5,17 @@ import { bodyShapes, hitShape } from '../src/rules/effects.js';
 import { RULES } from '../src/rules/config.js';
 import { createBlessingRain } from '../src/app/blessingRain.js';
 
-test('自动演示剧本：按顺序经过等待、微笑、停止、微笑、大笑，并循环', () => {
+test('自动演示剧本：等待 → 微笑 → 大笑 → 收尾，约 4 秒进入烟花，并循环', () => {
   const seen = [];
   const total = DEMO_SCRIPT.reduce((s, [, ms]) => s + ms, 0);
   for (let t = 0; t < total; t += 100) {
     const s = scriptedState(t);
     if (seen.at(-1) !== s) seen.push(s);
   }
-  assert.deepEqual(seen, ['idle', 'smile', 'idle', 'smile', 'laugh', 'idle']);
+  assert.deepEqual(seen, ['idle', 'smile', 'laugh', 'idle']);
   assert.equal(scriptedState(total + 50), 'idle');
   assert.equal(scriptedState(1600), 'smile');
+  assert.equal(scriptedState(4100), 'laugh');
 });
 
 test('碰撞体：头部和肩膀，肩膀在头下方且更宽', () => {
