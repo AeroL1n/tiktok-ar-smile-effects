@@ -76,7 +76,7 @@ export function renderStage(view) {
   els.state.textContent = STATE_LABELS[key];
   els.state.dataset.expression = key;
   els.dot.dataset.expression = key;
-  els.reason.textContent = view.reason || (!view.quiet && key === 'idle' ? '微笑或大笑来触发效果' : '');
+  els.reason.textContent = view.reason || (!view.quiet && key === 'idle' ? '微笑下雨，大笑放烟花' : '');
 
   els.hint.textContent = view.hint;
   els.hint.hidden = !view.hint;

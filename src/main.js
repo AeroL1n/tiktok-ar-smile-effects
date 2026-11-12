@@ -571,7 +571,7 @@ function setInputMode(mode) {
     demoInput = null;
     ctx.clearRect(0, 0, overlay.width, overlay.height);
     ui.setRecorderEnabled(true);
-    ui.renderStage({ phase: 'running', state: 'idle', reason: '打开摄像头后，这里会说明为什么触发或没有触发。', hint: '', calibrationProgress: 0 });
+    ui.renderStage({ phase: 'running', state: 'idle', reason: '微笑下雨，大笑放烟花', hint: '', calibrationProgress: 0 });
     ui.showPlaceholder('打开前置摄像头开始识别。视频只在本机处理，不会上传。', '开启摄像头');
     ui.setMode('idle', '等待摄像头');
   }
