@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#000000" />
+    <link rel="icon" href="data:," />
+    <title>smile-weather · 表情 AR 直播效果</title>
+    <script type="module" crossorigin src="./assets/index-DQbVt5vd.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-Czjsg770.css">
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <h1 class="wordmark">smile-weather</h1>
+        <div class="topbar-actions">
+          <div class="mode-switch" role="group" aria-label="输入方式">
+            <button type="button" data-input="camera" aria-pressed="false">摄像头</button>
+            <button type="button" data-input="demo" aria-pressed="true">演示</button>
+          </div>
+          <span class="live-indicator visually-hidden" id="liveIndicator">未连接</span>
+        </div>
+      </header>
+
+      <main class="stage-area" aria-label="直播画面">
+        <div class="stage">
+          <div class="camera-frame" id="cameraFrame">
+            <video id="camera" autoplay muted playsinline></video>
+            <canvas id="overlay" aria-hidden="true"></canvas>
+            <div class="camera-placeholder" id="cameraPlaceholder">
+              <p id="placeholderText">打开前置摄像头开始识别。视频只在本机处理，不会上传。</p>
+            </div>
+            <p class="stage-hint" id="stageHint" role="status" aria-live="polite" hidden></p>
+            <div class="calibration-bar" id="calibrationBar" hidden>
+              <span>正在校准，请保持自然表情</span>
+              <div class="calibration-track"><div class="calibration-fill" id="calibrationFill"></div></div>
+            </div>
+            <div class="stage-status" id="stageStatus" aria-hidden="true">等待摄像头</div>
+          </div>
+
+          <div class="stage-caption" role="status" aria-live="polite">
+            <span class="signal-dot" id="signalDot"></span>
+            <p class="expression-state" id="expressionState">等待表情</p>
+            <p class="expression-reason" id="expressionReason">微笑下雨，大笑放烟花</p>
+          </div>
+
+          <div class="demo-controls" id="demoControls" hidden>
+            <div class="demo-row demo-states" role="group" aria-label="模拟表情">
+              <button class="chip" type="button" data-demo-state="smile" aria-pressed="false">微笑 · 下雨</button>
+              <button class="chip" type="button" data-demo-state="laugh" aria-pressed="false">大笑 · 烟花</button>
+              <button class="chip" type="button" data-demo-state="auto" aria-pressed="true">自动轮播</button>
+            </div>
+          </div>
+
+          <div class="stage-footer">
+            <p class="error-message" id="errorMessage" role="alert"></p>
+            <div class="footer-actions">
+              <button class="secondary-button" id="demoFallback" type="button" hidden>先看演示</button>
+              <button class="primary-button" id="cameraButton" type="button">开启摄像头</button>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <aside class="debug-panel" id="debugPanel" aria-label="识别数据">
+        <div class="panel-head">
+          <h2>识别数据</h2>
+          <button class="text-button" id="panelClose" type="button">收起</button>
+        </div>
+        <div class="panel-scroll" id="debugBody">
+          <section class="recorder" id="recorderSection" aria-label="录制表情数据">
+            <h3>录制表情数据</h3>
+            <div class="recorder-row">
+              <label class="visually-hidden" for="recordLabel">要录的表情</label>
+              <select id="recordLabel">
+                <option value="teeth-smile">静止的露齿笑</option>
+                <option value="light-laugh">轻轻笑出声</option>
+                <option value="big-laugh">张大嘴大笑</option>
+                <option value="laugh-talk">边笑边说话</option>
+                <option value="cry">哭脸</option>
+                <option value="other">其他</option>
+              </select>
+              <button class="secondary-button" id="recordButton" type="button">录 3 秒</button>
+            </div>
+            <p class="recorder-status" id="recordStatus" role="status" aria-live="polite">点“录 3 秒”后有 3 秒准备时间，再连续记录 3 秒。</p>
+            <button class="text-button" id="copyRecording" type="button" hidden>复制数据</button>
+          </section>
+
+          <p class="metric-group">参与判定（平滑后）</p>
+          <dl class="metric-list">
+            <div class="metric-row"><dt>嘴角上扬</dt><dd id="smileValue">—</dd></div>
+            <div class="metric-row"><dt>嘴唇间距</dt><dd id="lipGapValue">—</dd></div>
+            <div class="metric-row"><dt>上唇上提</dt><dd id="upperUpValue">—</dd></div>
+            <div class="metric-row"><dt>眯眼</dt><dd id="squintValue">—</dd></div>
+            <div class="metric-row"><dt>皱眉</dt><dd id="browDownValue">—</dd></div>
+            <div class="metric-row"><dt>嘴型</dt><dd id="mouthShapeValue">—</dd></div>
+          </dl>
+          <p class="metric-group">参考读数（不参与判定）</p>
+          <dl class="metric-list">
+            <div class="metric-row"><dt>下巴张开</dt><dd id="jawValue">—</dd></div>
+            <div class="metric-row"><dt>眉心上提</dt><dd id="browInnerUpValue">—</dd></div>
+            <div class="metric-row"><dt>嘴角下拉</dt><dd id="frownValue">—</dd></div>
+            <div class="metric-row"><dt>嘴唇间距（含深度）</dt><dd id="lipGap3dValue">—</dd></div>
+            <div class="metric-row"><dt>低头抬头</dt><dd id="pitchValue">—</dd></div>
+          </dl>
+          <p class="metric-group">画面与性能</p>
+          <dl class="metric-list">
+            <div class="metric-row"><dt>自然表情基线</dt><dd id="baselineValue">校准后显示</dd></div>
+            <div class="metric-row"><dt>人脸数量</dt><dd id="faceCountValue">0</dd></div>
+            <div class="metric-row"><dt>画面检查</dt><dd id="qualityValue">—</dd></div>
+            <div class="metric-row"><dt>左右转头</dt><dd id="yawValue">—</dd></div>
+            <div class="metric-row"><dt>画面亮度</dt><dd id="brightnessValue">—</dd></div>
+            <div class="metric-row"><dt>识别频率</dt><dd id="detectionRateValue">—</dd></div>
+            <div class="metric-row"><dt>渲染帧率</dt><dd id="renderFpsValue">—</dd></div>
+            <div class="metric-row"><dt>雨滴 / 星光 / 烟花</dt><dd id="particleValue">—</dd></div>
+          </dl>
+          <p class="threshold-note" id="thresholdNote"></p>
+        </div>
+      </aside>
+
+      <button class="drawer-tab" id="debugToggle" type="button" aria-expanded="false" aria-controls="debugBody">识别数据</button>
+    </div>
+
+  </body>
+</html>
