@@ -500,11 +500,13 @@ async function start() {
     }
     // 先开摄像头，让用户立刻看到画面；模型在后台加载，失败可重试。
     ui.setMode('loading', '正在打开摄像头…');
-    const opened = await navigator.mediaDevices.getUserMedia({
+    ui.els.hint.textContent = '正在请求摄像头权限…';
+    ui.els.hint.hidden = false;
+    const opened = await withTimeout(navigator.mediaDevices.getUserMedia({
       audio: false,
       // 4:3 保留最多竖向视野；分辨率能高就高，竖屏裁切后仍清楚。摄像头不支持时会自动退到接近的值。
       video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 960 } }
-    });
+    }), 30000, '摄像头没有响应，请检查系统权限后重试');
     if (switched()) {
       opened.getTracks().forEach((track) => track.stop());
       return;
@@ -515,14 +517,10 @@ async function start() {
     // 不应该因此把已经拿到的摄像头关掉。
     try { await video.play(); } catch { /* 预览仍由 autoplay 属性接管 */ }
     if (switched()) return;
-    if (document.hidden) {
-      stop();
-      return;
-    }
     ui.hidePlaceholder();
     ui.showDemoFallback(false);
     ui.setMode('loading', '正在加载识别模型…');
-    ui.els.hint.textContent = '首次使用需要加载识别模型，约 10–30 秒';
+    ui.els.hint.textContent = '摄像头已打开，正在加载识别模型（约 10–30 秒）';
     ui.els.hint.hidden = false;
     await loadModel();
     if (switched()) return;
@@ -576,7 +574,9 @@ button.addEventListener('click', () => {
   else start();
 });
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && (stream || starting)) stop();
+  // iOS 在弹出摄像头权限面板时也可能触发 hidden；这时请求还没完成，
+  // 不能取消，否则用户点“允许”后反而回到“页面切到后台”的状态。
+  if (document.hidden && stream) stop();
 });
 window.addEventListener('pagehide', () => stop({ silent: true }));
 
