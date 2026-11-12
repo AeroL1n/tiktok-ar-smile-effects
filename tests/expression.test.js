@@ -51,10 +51,10 @@ test('开场 2 秒校准后才开始判定，并记录自然表情', () => {
   assert.ok(Math.abs(done.baseline.jaw - NEUTRAL.jaw) < 1e-9);
 });
 
-test('天生嘴角上扬的人：减掉基线后，平时的表情不下雨', () => {
+test('天生嘴角上扬的人：减掉基线后，普通表情不下雨（阈值放宽后 0.55 起会下小雨，已知取舍）', () => {
   const h = harness();
   h.calibrate({ smile: 0.25, jaw: 0.03 });
-  h.feed(1000, { smile: 0.55, jaw: 0.03 });
+  h.feed(1000, { smile: 0.5, jaw: 0.03 });
   assert.equal(h.last.state, 'idle');
   h.feed(1000, { smile: 0.9, jaw: 0.03 });
   assert.equal(h.last.state, 'smile');
@@ -234,7 +234,7 @@ for (const [name, face, expected] of MEASURED) {
   });
 }
 
-test('退出迟滞：嘴角回落到 0.25–0.36 之间仍下雨，低于 0.25 才停', () => {
+test('退出迟滞：嘴角回落到 0.22–0.32 之间仍下雨，低于 0.22 才停', () => {
   const h = harness();
   h.calibrate();
   h.feed(600, SMILE);
