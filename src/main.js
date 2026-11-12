@@ -443,6 +443,8 @@ let modelLoading = null;
 // 用同版本的 jsDelivr 再试一次；模型文件仍走本地。
 const WASM_SOURCES = [
   () => assetUrl('wasm'),
+  () => 'https://fastly.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm',
+  () => 'https://gcore.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm',
   () => 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm'
 ];
 
