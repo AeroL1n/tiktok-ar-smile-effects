@@ -105,6 +105,9 @@ export function createExpressionMachine(cfg) {
     if (s.browDown >= l.browDownMax) return false;
     // 主入口：录制数据校准出来的条件。
     if (s.smile >= l.smileMin && s.squint >= l.squintMin && mouthOpenForLaugh(s)) return true;
+    // 张嘴大笑但没眯眼：嘴角很高、嘴唇间距大、不皱眉。现场大笑经常睁着眼，
+    // 只靠眯眼会把这类漏判成下雨。
+    if (s.smile >= l.openSmileMin && s.lipGap >= l.openLipGapMin) return true;
     // 备用入口：嘴角很高（≥0.85）、下巴明显张开（≥0.2）、嘴略张（≥0.12）、眯眼略低（≥0.44）。
     // 这类是“咧开嘴笑”，嘴唇间距不大但下巴动得明显；边笑边说话下巴几乎不动，哭脸嘴角不够高，都会被这条排除。
     return s.smile >= l.wideSmile && s.jaw >= l.wideJaw && s.lipGap >= l.wideLipGap && s.squint >= l.wideSquint;

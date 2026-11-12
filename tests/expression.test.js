@@ -184,12 +184,19 @@ test('大笑中嘴角回落到 0.60 以下：回到下雨', () => {
   assert.equal(h.last.state, 'smile');
 });
 
-test('嘴张大但眼睛没眯起：不放烟花，并说明原因', () => {
+test('嘴张大但眼睛没眯起：嘴角和嘴唇间距够，仍然放烟花（2026-11-12 用户确认）', () => {
   const h = harness();
   h.calibrate();
   h.feed(1500, { smile: 0.8, jaw: 0.1, lipGap: 0.45, squint: 0.2 });
+  assert.equal(h.last.state, 'laugh');
+});
+
+test('嘴张大但嘴角不够：不放烟花，仍说明原因', () => {
+  const h = harness();
+  h.calibrate();
+  h.feed(1500, { smile: 0.5, jaw: 0.1, lipGap: 0.4, squint: 0.2 });
   assert.equal(h.last.state, 'smile');
-  assert.match(h.last.reason, /眯/);
+  assert.match(h.last.reason, /眯|嘴角/);
 });
 
 test('哭脸：嘴角高、眯眼、上排牙露出，但皱着眉，不放烟花，只下雨', () => {
