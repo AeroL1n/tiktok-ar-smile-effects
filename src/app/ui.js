@@ -126,18 +126,22 @@ export function renderMetrics(m) {
   if (m.collisions !== undefined) setText('collisionValue', String(m.collisions));
 }
 
+let panelChange = () => {};
+
 function setPanelOpen(open) {
   els.panel.classList.toggle('is-open', open);
   document.body.classList.toggle('panel-open', open);
   els.debugToggle.setAttribute('aria-expanded', String(open));
   if (els.panelClose) els.panelClose.hidden = !open;
+  // 数据抽屉开合同时控制碰撞体轮廓；关闭路径（按钮 / Esc）也要复位。
+  panelChange(open);
 }
 
 export function bindDebugToggle(onChange = () => {}) {
+  panelChange = onChange;
   els.debugToggle.addEventListener('click', () => {
     const open = els.debugToggle.getAttribute('aria-expanded') !== 'true';
     setPanelOpen(open);
-    onChange(open);
   });
 }
 
