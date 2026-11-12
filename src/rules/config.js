@@ -15,7 +15,8 @@ export const RULES = Object.freeze({
     smileMin: 0.5,
     // 2026-11-12 二次放宽（现场截图：嘴唇间距 0.19、上唇上提 0.54 仍判成微笑）：
     // 上唇上提 0.60 → 0.52；眯眼 0.45 → 0.44（再低会把露齿笑判成大笑）；嘴唇间距保持 0.26（再低哭脸会误判，录制回放验证过）。
-    squintMin: 0.44,
+    // 2026-11-12：现场反馈大笑也难触发，眯眼 0.44 → 0.42，保持 250 → 200ms。
+    squintMin: 0.42,
     browDownMax: 0.3,
     lipGapMin: 0.26,
     // 靠上唇上提判断张嘴时，同时要求下巴有一点张开，避免说话时的上唇动作被当成大笑。
@@ -34,7 +35,7 @@ export const RULES = Object.freeze({
   },
   mouth: { openMin: 0.12 },
   jaw: { yawn: 0.6 },
-  hold: { smileMs: 200, laughMs: 250 },
+  hold: { smileMs: 200, laughMs: 200 },
   smoothing: { tauMs: 100 },
   calibration: {
     durationMs: 2000,
