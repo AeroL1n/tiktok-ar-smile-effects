@@ -642,3 +642,6 @@ ui.bindRecorder({
   },
   getLast: () => lastRecording
 });
+
+// 打开链接先看效果：默认进入演示模式（自动轮播），摄像头在右上角随时切换。
+setInputMode('demo');
