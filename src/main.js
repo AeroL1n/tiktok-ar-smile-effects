@@ -430,21 +430,40 @@ function frame(now) {
   else cameraFrame(now);
 }
 
+function withTimeout(promise, ms, message) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms))
+  ]);
+}
+
+let modelLoading = null;
+
 async function loadModel() {
   if (faceLandmarker) return;
-  ui.setMode('loading', '正在加载识别模型…');
-  try {
+  if (modelLoading) return modelLoading;
+  modelLoading = (async () => {
+    ui.setMode('loading', '正在加载识别模型…');
     const vision = await FilesetResolver.forVisionTasks(assetUrl('wasm'));
-    faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
-      baseOptions: { modelAssetPath: assetUrl('models/face_landmarker.task'), delegate: 'GPU' },
+    const options = (delegate) => ({
+      baseOptions: { modelAssetPath: assetUrl('models/face_landmarker.task'), delegate },
       runningMode: 'VIDEO',
       numFaces: 3,
       outputFaceBlendshapes: true,
       outputFacialTransformationMatrixes: true
     });
-  } catch (error) {
+    try {
+      faceLandmarker = await withTimeout(FaceLandmarker.createFromOptions(vision, options('GPU')), 45000, '识别模型加载超时');
+    } catch {
+      // iOS Safari / 部分安卓机的 GPU 委托会卡住或失败，退回 CPU 再试一次。
+      faceLandmarker = await withTimeout(FaceLandmarker.createFromOptions(vision, options('CPU')), 45000, '识别模型加载超时');
+    }
+  })().catch((error) => {
     throw new Error('识别模型加载失败，请检查网络后重试。', { cause: error });
-  }
+  }).finally(() => {
+    modelLoading = null;
+  });
+  return modelLoading;
 }
 
 function cameraErrorMessage(error) {
@@ -479,8 +498,7 @@ async function start() {
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error('当前浏览器不支持摄像头。请使用最新版 Chrome 或 Safari。');
     }
-    await loadModel();
-    if (switched()) return;
+    // 先开摄像头，让用户立刻看到画面；模型在后台加载，失败可重试。
     ui.setMode('loading', '正在打开摄像头…');
     const opened = await navigator.mediaDevices.getUserMedia({
       audio: false,
@@ -493,19 +511,28 @@ async function start() {
     }
     stream = opened;
     video.srcObject = stream;
-    await video.play();
+    // 静音 + playsinline 的自动播放一般不会失败；个别 iOS 版本会拒绝 play()，
+    // 不应该因此把已经拿到的摄像头关掉。
+    try { await video.play(); } catch { /* 预览仍由 autoplay 属性接管 */ }
     if (switched()) return;
     if (document.hidden) {
       stop();
       return;
     }
-    resetSession();
     ui.hidePlaceholder();
     ui.showDemoFallback(false);
+    ui.setMode('loading', '正在加载识别模型…');
+    ui.els.hint.textContent = '首次使用需要加载识别模型，约 10–30 秒';
+    ui.els.hint.hidden = false;
+    await loadModel();
+    if (switched()) return;
+    ui.els.hint.hidden = true;
+    resetSession();
     ui.setMode('live', '正在识别');
     rafId = requestAnimationFrame(frame);
   } catch (error) {
     if (switched()) return;
+    ui.els.hint.hidden = true;
     stop({ silent: true });
     ui.setError(cameraErrorMessage(error));
     ui.setMode('error', '无法启动');
@@ -528,6 +555,7 @@ function stop({ silent = false, manual = false } = {}) {
   stream?.getTracks().forEach((track) => track.stop());
   stream = undefined;
   video.srcObject = null;
+  ui.els.hint.hidden = true;
   ctx.clearRect(0, 0, overlay.width, overlay.height);
   resetSession();
   if (recorder.active) {
