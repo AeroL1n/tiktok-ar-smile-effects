@@ -476,6 +476,19 @@ async function loadModel() {
   return modelLoading;
 }
 
+// 演示模式空闲时预取模型与 wasm，用户切到摄像头时就不用再等 15MB 下载。
+let prefetched = false;
+function prefetchModelAssets() {
+  if (prefetched) return;
+  prefetched = true;
+  const urls = [
+    `${assetUrl('models/face_landmarker.task')}?v=20261112`,
+    assetUrl('wasm/vision_wasm_internal.js'),
+    assetUrl('wasm/vision_wasm_internal.wasm')
+  ];
+  for (const url of urls) fetch(url, { cache: 'force-cache' }).catch(() => {});
+}
+
 function cameraErrorMessage(error) {
   switch (error.name) {
     case 'NotAllowedError':
@@ -694,3 +707,4 @@ ui.bindRecorder({
 
 // 打开链接先看效果：默认进入演示模式（自动轮播），摄像头在右上角随时切换。
 setInputMode('demo');
+setTimeout(prefetchModelAssets, 2000);
