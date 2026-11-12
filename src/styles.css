@@ -255,7 +255,12 @@ h1, h2, p { margin-top: 0; }
 }
 
 .demo-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.demo-states { gap: 2px; }
+.demo-states {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.demo-states .chip { min-width: 0; }
 
 .chip {
   padding: 9px 16px;
@@ -563,6 +568,8 @@ h1, h2, p { margin-top: 0; }
   .topbar { gap: 12px; }
   .wordmark { font-size: 18px; }
   .mode-switch button { padding: 6px 12px; }
+  .mode-switch button,
+  .demo-states .chip { min-height: 44px; }
   .stage-area {
     display: block;
     min-height: 0;
@@ -595,6 +602,7 @@ h1, h2, p { margin-top: 0; }
     justify-content: center;
     border-radius: 20px;
   }
+  .demo-states { width: 100%; }
   .demo-row { justify-content: center; }
   .stage-footer {
     width: min(100%, 430px);

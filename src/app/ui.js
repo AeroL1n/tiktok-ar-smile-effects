@@ -34,6 +34,7 @@ const STATE_LABELS = {
 };
 
 const LIVE_LABELS = { idle: '未连接', loading: '启动中', live: '识别中', paused: '已暂停', error: '需处理', demo: '演示中' };
+const CAMERA_BUTTON_LABELS = { idle: '开启摄像头', loading: '正在启动…', live: '关闭摄像头', paused: '开启摄像头', error: '重试' };
 
 const fmt = (v, digits = 2) => (Number.isFinite(v) ? v.toFixed(digits) : '—');
 const setText = (id, text) => { const el = $(id); if (el) el.textContent = text; };
@@ -44,6 +45,7 @@ export function setMode(mode, statusText) {
   els.live.textContent = LIVE_LABELS[mode] ?? LIVE_LABELS.idle;
   els.live.dataset.mode = mode;
   els.dot.dataset.mode = mode;
+  if (CAMERA_BUTTON_LABELS[mode]) els.button.textContent = CAMERA_BUTTON_LABELS[mode];
 }
 
 export function setError(message = '') {
@@ -59,7 +61,6 @@ export function showPlaceholder(text, buttonLabel) {
 
 export function hidePlaceholder() {
   els.placeholder.hidden = true;
-  els.button.textContent = '重新开启摄像头';
 }
 
 export function renderThresholds() {

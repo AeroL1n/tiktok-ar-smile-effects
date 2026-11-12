@@ -464,10 +464,12 @@ function cameraErrorMessage(error) {
 
 async function start() {
   if (starting || inputMode !== 'camera') return;
+  stop({ silent: true });
   starting = true;
   const session = cameraSession;
   const switched = () => session !== cameraSession;
   button.disabled = true;
+  ui.setMode('loading', '正在启动摄像头…');
   ui.setError('');
 
   try {
@@ -480,7 +482,6 @@ async function start() {
     await loadModel();
     if (switched()) return;
     ui.setMode('loading', '正在打开摄像头…');
-    stop({ silent: true });
     const opened = await navigator.mediaDevices.getUserMedia({
       audio: false,
       // 4:3 保留最多竖向视野；分辨率能高就高，竖屏裁切后仍清楚。摄像头不支持时会自动退到接近的值。
@@ -511,12 +512,18 @@ async function start() {
     ui.showPlaceholder('摄像头没有启动，可以先看演示', '重试');
     ui.showDemoFallback(true);
   } finally {
-    starting = false;
-    button.disabled = false;
+    if (!switched()) {
+      starting = false;
+      button.disabled = false;
+    }
   }
 }
 
-function stop({ silent = false } = {}) {
+function stop({ silent = false, manual = false } = {}) {
+  // 使尚未结束的模型加载 / 摄像头申请失效，避免关闭后旧请求又打开摄像头。
+  cameraSession += 1;
+  starting = false;
+  button.disabled = false;
   cancelAnimationFrame(rafId);
   stream?.getTracks().forEach((track) => track.stop());
   stream = undefined;
@@ -529,12 +536,17 @@ function stop({ silent = false } = {}) {
     ui.setRecordingResult('录制被中断：摄像头已关闭，请重新录', false);
   }
   if (!silent) {
-    ui.setMode('paused', '已暂停');
-    ui.showPlaceholder('页面切到后台时已关闭摄像头', '继续识别');
+    ui.clearSignals('—');
+    ui.renderStage({ phase: 'running', state: 'idle', reason: '微笑下雨，大笑放烟花', hint: '', calibrationProgress: 0 });
+    ui.setMode(manual ? 'idle' : 'paused', manual ? '摄像头已关闭' : '已暂停');
+    ui.showPlaceholder(manual ? '摄像头已关闭，点击下方按钮可重新开启。' : '页面切到后台时已关闭摄像头', '开启摄像头');
   }
 }
 
-button.addEventListener('click', start);
+button.addEventListener('click', () => {
+  if (stream) stop({ manual: true });
+  else start();
+});
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && (stream || starting)) stop();
 });
