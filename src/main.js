@@ -452,12 +452,21 @@ async function loadModel() {
       outputFaceBlendshapes: true,
       outputFacialTransformationMatrixes: true
     });
-    try {
-      faceLandmarker = await withTimeout(FaceLandmarker.createFromOptions(vision, options('GPU')), 45000, '识别模型加载超时');
-    } catch {
-      // iOS Safari / 部分安卓机的 GPU 委托会卡住或失败，退回 CPU 再试一次。
-      faceLandmarker = await withTimeout(FaceLandmarker.createFromOptions(vision, options('CPU')), 45000, '识别模型加载超时');
+    // iOS Safari 的 GPU 委托经常卡住几十秒；iPhone/iPad 先用 CPU，桌面和安卓再试 GPU。
+    const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const order = isIOS ? ['CPU', 'GPU'] : ['GPU', 'CPU'];
+    let lastError = null;
+    for (const delegate of order) {
+      try {
+        faceLandmarker = await withTimeout(FaceLandmarker.createFromOptions(vision, options(delegate)), 30000, '识别模型加载超时');
+        lastError = null;
+        break;
+      } catch (error) {
+        lastError = error;
+      }
     }
+    if (!faceLandmarker) throw lastError ?? new Error('识别模型加载失败');
   })().catch((error) => {
     throw new Error('识别模型加载失败，请检查网络后重试。', { cause: error });
   }).finally(() => {
@@ -520,9 +529,19 @@ async function start() {
     ui.hidePlaceholder();
     ui.showDemoFallback(false);
     ui.setMode('loading', '正在加载识别模型…');
+    button.textContent = '加载模型中…';
     ui.els.hint.textContent = '摄像头已打开，正在加载识别模型（约 10–30 秒）';
     ui.els.hint.hidden = false;
-    await loadModel();
+    let waited = 0;
+    const progress = setInterval(() => {
+      waited += 1;
+      if (!switched()) ui.els.hint.textContent = `正在加载识别模型…已等待 ${waited} 秒（首次约 10–30 秒）`;
+    }, 1000);
+    try {
+      await loadModel();
+    } finally {
+      clearInterval(progress);
+    }
     if (switched()) return;
     ui.els.hint.hidden = true;
     resetSession();
