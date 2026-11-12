@@ -452,23 +452,23 @@ async function loadModel() {
       outputFaceBlendshapes: true,
       outputFacialTransformationMatrixes: true
     });
-    // iOS Safari 的 GPU 委托经常卡住几十秒；iPhone/iPad 先用 CPU，桌面和安卓再试 GPU。
-    const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent)
-      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    const order = isIOS ? ['CPU', 'GPU'] : ['GPU', 'CPU'];
+    // 先 GPU（真机上原来能正常加载），失败再退回 CPU。模型首次下载可能超过 30 秒，
+    // 这里不设下载超时，只由外层进度提示和“切到演示”让用户自己中止。
     let lastError = null;
-    for (const delegate of order) {
+    for (const delegate of ['GPU', 'CPU']) {
       try {
-        faceLandmarker = await withTimeout(FaceLandmarker.createFromOptions(vision, options(delegate)), 30000, '识别模型加载超时');
+        faceLandmarker = await FaceLandmarker.createFromOptions(vision, options(delegate));
         lastError = null;
         break;
       } catch (error) {
         lastError = error;
+        console.warn(`FaceLandmarker ${delegate} 初始化失败`, error);
       }
     }
     if (!faceLandmarker) throw lastError ?? new Error('识别模型加载失败');
   })().catch((error) => {
-    throw new Error('识别模型加载失败，请检查网络后重试。', { cause: error });
+    const detail = String(error?.message ?? '').slice(0, 80);
+    throw new Error(detail ? `识别模型加载失败：${detail}` : '识别模型加载失败，请检查网络后重试。', { cause: error });
   }).finally(() => {
     modelLoading = null;
   });
@@ -507,10 +507,26 @@ async function start() {
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error('当前浏览器不支持摄像头。请使用最新版 Chrome 或 Safari。');
     }
-    // 先开摄像头，让用户立刻看到画面；模型在后台加载，失败可重试。
-    ui.setMode('loading', '正在打开摄像头…');
-    ui.els.hint.textContent = '正在请求摄像头权限…';
+    // 恢复“先加载模型、再开摄像头”的稳定顺序：iOS 上先开摄像头再创建 GPU 上下文
+    // 曾出现模型初始化失败；模型加载期间给出秒数提示。
+    ui.setMode('loading', '正在加载识别模型…');
+    button.textContent = '加载模型中…';
+    ui.els.hint.textContent = '首次使用需要加载识别模型（约 10–30 秒）';
     ui.els.hint.hidden = false;
+    let waited = 0;
+    const progress = setInterval(() => {
+      waited += 1;
+      if (!switched()) ui.els.hint.textContent = `正在加载识别模型…已等待 ${waited} 秒（首次约 10–30 秒）`;
+    }, 1000);
+    try {
+      await loadModel();
+    } finally {
+      clearInterval(progress);
+    }
+    if (switched()) return;
+    ui.setMode('loading', '正在打开摄像头…');
+    button.textContent = '正在打开摄像头…';
+    ui.els.hint.textContent = '识别模型已加载，正在请求摄像头权限…';
     const opened = await withTimeout(navigator.mediaDevices.getUserMedia({
       audio: false,
       // 4:3 保留最多竖向视野；分辨率能高就高，竖屏裁切后仍清楚。摄像头不支持时会自动退到接近的值。
@@ -528,21 +544,6 @@ async function start() {
     if (switched()) return;
     ui.hidePlaceholder();
     ui.showDemoFallback(false);
-    ui.setMode('loading', '正在加载识别模型…');
-    button.textContent = '加载模型中…';
-    ui.els.hint.textContent = '摄像头已打开，正在加载识别模型（约 10–30 秒）';
-    ui.els.hint.hidden = false;
-    let waited = 0;
-    const progress = setInterval(() => {
-      waited += 1;
-      if (!switched()) ui.els.hint.textContent = `正在加载识别模型…已等待 ${waited} 秒（首次约 10–30 秒）`;
-    }, 1000);
-    try {
-      await loadModel();
-    } finally {
-      clearInterval(progress);
-    }
-    if (switched()) return;
     ui.els.hint.hidden = true;
     resetSession();
     ui.setMode('live', '正在识别');
